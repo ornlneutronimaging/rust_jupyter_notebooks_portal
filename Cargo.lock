@@ -1855,6 +1855,7 @@ name = "rust_jupyter_notebooks_portal"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "image",
  "libc",
 ]
 

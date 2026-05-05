@@ -1,1 +1,1 @@
-/gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/target/release/rust_jupyter_notebooks_portal: /gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/src/main.rs
+/gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/target/release/rust_jupyter_notebooks_portal: /gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/logos/ImagingLogo.png /gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/src/main.rs
