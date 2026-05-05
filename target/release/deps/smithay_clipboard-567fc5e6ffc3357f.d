@@ -1,0 +1,10 @@
+/gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/target/release/deps/smithay_clipboard-567fc5e6ffc3357f.d: /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/lib.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/mime.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/state.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/worker.rs
+
+/gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/target/release/deps/libsmithay_clipboard-567fc5e6ffc3357f.rlib: /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/lib.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/mime.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/state.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/worker.rs
+
+/gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/target/release/deps/libsmithay_clipboard-567fc5e6ffc3357f.rmeta: /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/lib.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/mime.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/state.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/worker.rs
+
+/SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/lib.rs:
+/SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/mime.rs:
+/SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/state.rs:
+/SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smithay-clipboard-0.7.3/src/worker.rs:

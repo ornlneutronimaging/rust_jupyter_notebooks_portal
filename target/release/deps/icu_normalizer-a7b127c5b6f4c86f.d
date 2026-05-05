@@ -1,0 +1,10 @@
+/gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/target/release/deps/icu_normalizer-a7b127c5b6f4c86f.d: /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/lib.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/properties.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/provider.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/uts46.rs
+
+/gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/target/release/deps/libicu_normalizer-a7b127c5b6f4c86f.rlib: /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/lib.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/properties.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/provider.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/uts46.rs
+
+/gpfs/neutronsfs/instruments/VENUS/shared/software/git/rust_jupyter_notebooks_portal/target/release/deps/libicu_normalizer-a7b127c5b6f4c86f.rmeta: /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/lib.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/properties.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/provider.rs /SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/uts46.rs
+
+/SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/lib.rs:
+/SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/properties.rs:
+/SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/provider.rs:
+/SNS/users/j35/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/uts46.rs:
