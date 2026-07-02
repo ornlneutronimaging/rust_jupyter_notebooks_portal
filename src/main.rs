@@ -4,11 +4,17 @@ use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
+use std::thread;
 
 const SOURCE_DIR: &str = "/SNS/VENUS/shared/software/git/python_notebooks";
 const COPY_FOLDERS: &[&str] = &["notebooks", "static", "util"];
 const COPY_FILES: &[&str] = &["README.md", "pixi.toml"];
 const LAUNCH_SCRIPT: &str = "/SNS/VENUS/shared/software/scripts/start_jupyter_pixi_via_rust";
+/// Maintenance script that lists and kills stuck browser / Jupyter sessions
+/// across the shared analysis machines (same one the marimo portal uses).
+const FIX_BROWSER_SCRIPT: &str =
+    "/SNS/VENUS/shared/software/bin/list_and_fix_running_browser.sh";
 const LOGO_BYTES: &[u8] = include_bytes!("../logos/ImagingLogo.png");
 const LOGO_MAX_HEIGHT: f32 = 64.0;
 
@@ -38,6 +44,7 @@ impl Instrument {
 struct Entry {
     label: String,
     path: PathBuf,
+    writable: bool,
 }
 
 fn can_access(path: &Path) -> bool {
@@ -47,15 +54,24 @@ fn can_access(path: &Path) -> bool {
     unsafe { libc::access(cstr.as_ptr(), libc::R_OK | libc::X_OK) == 0 }
 }
 
+fn can_write(path: &Path) -> bool {
+    let Ok(cstr) = CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    unsafe { libc::access(cstr.as_ptr(), libc::W_OK) == 0 }
+}
+
 fn home_entry() -> Option<Entry> {
     let home = std::env::var_os("HOME")?;
     let path = PathBuf::from(home);
     if !can_access(&path) {
         return None;
     }
+    let writable = can_write(&path);
     Some(Entry {
         label: "HOME".to_string(),
         path,
+        writable,
     })
 }
 
@@ -135,6 +151,21 @@ fn provision_and_launch(dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Kick off the browser-cleanup script and return a channel that fires when
+/// it exits, so the UI can clear its status message.
+fn launch_fix_browser() -> Result<mpsc::Receiver<()>, String> {
+    let mut child = Command::new(FIX_BROWSER_SCRIPT)
+        .arg("kill")
+        .spawn()
+        .map_err(|e| format!("spawn {FIX_BROWSER_SCRIPT}: {e}"))?;
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = child.wait();
+        let _ = tx.send(());
+    });
+    Ok(rx)
+}
+
 fn list_entries(root: &Path) -> Result<Vec<Entry>, String> {
     let mut out: Vec<Entry> = Vec::new();
     if let Some(home) = home_entry() {
@@ -153,12 +184,14 @@ fn list_entries(root: &Path) -> Result<Vec<Entry>, String> {
         if !can_access(&path) {
             continue;
         }
+        let writable = can_write(&path.join("shared"));
         let num: u64 = suffix.parse().unwrap_or(u64::MAX);
         ipts.push((
             num,
             Entry {
                 label: name_str.into_owned(),
                 path,
+                writable,
             },
         ));
     }
@@ -177,6 +210,12 @@ struct App {
     launching: bool,
     pending_launch: Option<PathBuf>,
     logo: Option<egui::TextureHandle>,
+    manual_ipts: String,
+    manual_ipts_msg: Option<(String, egui::Color32)>,
+    scroll_to_selected: bool,
+    fix_browser_status: Option<(String, egui::Color32)>,
+    /// Signals when the cleanup script exits, so the message can be cleared.
+    fix_browser_rx: Option<mpsc::Receiver<()>>,
 }
 
 impl Default for App {
@@ -191,6 +230,11 @@ impl Default for App {
             launching: false,
             pending_launch: None,
             logo: None,
+            manual_ipts: String::new(),
+            manual_ipts_msg: None,
+            scroll_to_selected: false,
+            fix_browser_status: None,
+            fix_browser_rx: None,
         }
     }
 }
@@ -211,6 +255,9 @@ impl App {
         self.launch_status = None;
         self.launching = false;
         self.pending_launch = None;
+        self.manual_ipts.clear();
+        self.manual_ipts_msg = None;
+        self.scroll_to_selected = false;
         self.loaded_for = Some(self.instrument);
     }
 
@@ -284,6 +331,59 @@ impl eframe::App for App {
                 "You have access to {} IPTS for this instrument",
                 self.ipts_count()
             ));
+            ui.add_space(2.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("IPTS-").strong());
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut self.manual_ipts)
+                        .desired_width(120.0)
+                        .hint_text("number"),
+                );
+                if resp.changed() {
+                    let trimmed = self.manual_ipts.trim().to_string();
+                    if trimmed.is_empty() {
+                        self.manual_ipts_msg = None;
+                    } else if trimmed.parse::<u64>().is_err() {
+                        self.manual_ipts_msg =
+                            Some(("Enter digits only".to_string(), egui::Color32::RED));
+                    } else {
+                        let target = format!("IPTS-{}", trimmed);
+                        let found = self
+                            .entries
+                            .iter()
+                            .enumerate()
+                            .find(|(_, e)| e.label == target)
+                            .map(|(idx, e)| (idx, e.writable));
+                        match found {
+                            Some((idx, true)) => {
+                                if self.selected != Some(idx) {
+                                    self.launch_status = None;
+                                    self.launching = false;
+                                    self.pending_launch = None;
+                                }
+                                self.selected = Some(idx);
+                                self.scroll_to_selected = true;
+                                self.manual_ipts_msg = None;
+                            }
+                            Some((_, false)) => {
+                                self.manual_ipts_msg = Some((
+                                    format!("{} found but no write access", target),
+                                    egui::Color32::from_rgb(200, 120, 0),
+                                ));
+                            }
+                            None => {
+                                self.manual_ipts_msg = Some((
+                                    format!("{} not found", target),
+                                    egui::Color32::RED,
+                                ));
+                            }
+                        }
+                    }
+                }
+            });
+            if let Some((msg, color)) = &self.manual_ipts_msg {
+                ui.colored_label(*color, msg);
+            }
             ui.add_space(4.0);
         });
 
@@ -315,30 +415,73 @@ impl eframe::App for App {
                 };
             }
 
+            // Clear the cleanup message once the script has finished.
+            if let Some(rx) = &self.fix_browser_rx {
+                if rx.try_recv().is_ok() {
+                    self.fix_browser_rx = None;
+                    self.fix_browser_status = None;
+                } else {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(200));
+                }
+            }
+
             let enabled = dest.is_some() && !self.launching;
             let label = if self.launching {
                 "Imaging notebooks launching ..."
             } else {
                 "Launch the imaging notebooks"
             };
-            ui.add_enabled_ui(enabled, |ui| {
-                let mut button =
-                    egui::Button::new(egui::RichText::new(label).color(egui::Color32::WHITE));
-                if enabled {
-                    button = button.fill(egui::Color32::from_rgb(46, 160, 67));
-                }
-                if ui
-                    .add_sized([ui.available_width(), 28.0], button)
-                    .clicked()
-                {
-                    if let Some(d) = &dest {
-                        self.launching = true;
-                        self.launch_status = None;
-                        self.pending_launch = Some(d.clone());
-                        ctx.request_repaint();
+            ui.horizontal(|ui| {
+                // Left utility: kill stuck browser sessions.
+                let fix_button = egui::Button::new(
+                    egui::RichText::new("\u{1F527} Fix browser issue")
+                        .color(egui::Color32::WHITE),
+                )
+                .fill(egui::Color32::from_rgb(138, 43, 226))
+                .rounding(egui::Rounding::same(6.0))
+                .min_size(egui::vec2(0.0, 28.0));
+                let resp = ui
+                    .add(fix_button)
+                    .on_hover_text("Kill stuck browser sessions");
+                if resp.clicked() {
+                    match launch_fix_browser() {
+                        Ok(rx) => {
+                            self.fix_browser_rx = Some(rx);
+                            self.fix_browser_status = Some((
+                                "Killing stuck browser sessions\u{2026}".to_string(),
+                                egui::Color32::from_rgb(46, 160, 67),
+                            ));
+                        }
+                        Err(e) => {
+                            self.fix_browser_rx = None;
+                            self.fix_browser_status = Some((e, egui::Color32::RED));
+                        }
                     }
                 }
+
+                // Primary action fills the rest of the row.
+                ui.add_enabled_ui(enabled, |ui| {
+                    let mut button =
+                        egui::Button::new(egui::RichText::new(label).color(egui::Color32::WHITE));
+                    if enabled {
+                        button = button.fill(egui::Color32::from_rgb(46, 160, 67));
+                    }
+                    if ui
+                        .add_sized([ui.available_width(), 28.0], button)
+                        .clicked()
+                    {
+                        if let Some(d) = &dest {
+                            self.launching = true;
+                            self.launch_status = None;
+                            self.pending_launch = Some(d.clone());
+                            ctx.request_repaint();
+                        }
+                    }
+                });
             });
+            if let Some((msg, color)) = &self.fix_browser_status {
+                ui.colored_label(*color, msg);
+            }
             ui.add_space(4.0);
         });
 
@@ -346,15 +489,34 @@ impl eframe::App for App {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for (idx, entry) in self.entries.iter().enumerate() {
                     let is_selected = self.selected == Some(idx);
-                    if ui.selectable_label(is_selected, &entry.label).clicked() {
-                        if self.selected != Some(idx) {
-                            self.launch_status = None;
-                            self.launching = false;
-                            self.pending_launch = None;
+                    if entry.writable {
+                        let resp = ui.selectable_label(is_selected, &entry.label);
+                        if resp.clicked() {
+                            if self.selected != Some(idx) {
+                                self.launch_status = None;
+                                self.launching = false;
+                                self.pending_launch = None;
+                            }
+                            self.selected = Some(idx);
+                            self.manual_ipts = entry
+                                .label
+                                .strip_prefix("IPTS-")
+                                .unwrap_or("")
+                                .to_string();
+                            self.manual_ipts_msg = None;
                         }
-                        self.selected = Some(idx);
+                        if is_selected && self.scroll_to_selected {
+                            resp.scroll_to_me(Some(egui::Align::Center));
+                        }
+                    } else {
+                        ui.add_enabled(
+                            false,
+                            egui::SelectableLabel::new(false, &entry.label),
+                        )
+                        .on_disabled_hover_text("No write access to shared folder");
                     }
                 }
+                self.scroll_to_selected = false;
             });
         });
     }
