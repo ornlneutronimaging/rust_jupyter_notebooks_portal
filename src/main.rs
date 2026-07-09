@@ -108,6 +108,20 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Recursively set rwx-for-all on a path and everything inside it.
+/// Entries owned by other users cannot be chmod'ed and are left as-is.
+fn open_permissions_recursive(path: &Path) {
+    let open_perms = fs::Permissions::from_mode(0o777);
+    let _ = fs::set_permissions(path, open_perms);
+    if path.is_dir() {
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                open_permissions_recursive(&entry.path());
+            }
+        }
+    }
+}
+
 fn destination_for(entry: &Entry, instrument: Instrument) -> Option<PathBuf> {
     if entry.label == "HOME" {
         let home = std::env::var_os("HOME")?;
@@ -154,6 +168,9 @@ fn provision_and_launch(dest: &Path) -> Result<(), String> {
         fs::copy(&s, &d)
             .map_err(|e| format!("copy {} -> {}: {e}", s.display(), d.display()))?;
     }
+    // Whether the destination pre-existed or was just provisioned, make sure
+    // everything in it (notebooks included) is read/write/exec by everybody.
+    open_permissions_recursive(dest);
     Command::new(LAUNCH_SCRIPT)
         .arg(dest)
         .spawn()
