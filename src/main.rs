@@ -2,6 +2,7 @@ use eframe::egui;
 use std::ffi::CString;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
@@ -129,6 +130,15 @@ fn provision_and_launch(dest: &Path) -> Result<(), String> {
     let src = Path::new(SOURCE_DIR);
     fs::create_dir_all(dest)
         .map_err(|e| format!("create {}: {e}", dest.display()))?;
+    // Everybody must be able to read/write/traverse the notebooks folders.
+    // The parent `notebooks` dir may pre-exist and belong to another user,
+    // in which case chmod fails and we leave it as-is.
+    let open_perms = fs::Permissions::from_mode(0o777);
+    if let Some(notebooks_dir) = dest.parent() {
+        let _ = fs::set_permissions(notebooks_dir, open_perms.clone());
+    }
+    fs::set_permissions(dest, open_perms)
+        .map_err(|e| format!("chmod 777 {}: {e}", dest.display()))?;
     for folder in COPY_FOLDERS {
         let s = src.join(folder);
         let d = dest.join(folder);
