@@ -1,3 +1,5 @@
+mod theme;
+
 use eframe::egui;
 use std::ffi::CString;
 use std::fs;
@@ -340,6 +342,9 @@ impl eframe::App for App {
                     self.refresh();
                 }
 
+                ui.separator();
+                theme::toggle_button(ui);
+
                 ui.with_layout(
                     egui::Layout::right_to_left(egui::Align::Center),
                     |ui| {
@@ -488,8 +493,13 @@ impl eframe::App for App {
 
                 // Primary action fills the rest of the row.
                 ui.add_enabled_ui(enabled, |ui| {
-                    let mut button =
-                        egui::Button::new(egui::RichText::new(label).color(egui::Color32::WHITE));
+                    // White text only over the green fill; the disabled button
+                    // keeps the theme's own text color.
+                    let mut text = egui::RichText::new(label);
+                    if enabled {
+                        text = text.color(egui::Color32::WHITE);
+                    }
+                    let mut button = egui::Button::new(text);
                     if enabled {
                         button = button.fill(egui::Color32::from_rgb(46, 160, 67));
                     }
@@ -557,6 +567,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Neutron IPTS Browser",
         options,
-        Box::new(|_cc| Ok(Box::<App>::default())),
+        Box::new(|cc| {
+            cc.egui_ctx.set_visuals(theme::load().visuals());
+            Ok(Box::<App>::default())
+        }),
     )
 }
