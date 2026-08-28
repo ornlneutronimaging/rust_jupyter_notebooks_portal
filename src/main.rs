@@ -1,4 +1,5 @@
 mod theme;
+mod zoom;
 
 use eframe::egui;
 use std::ffi::CString;
@@ -344,6 +345,7 @@ impl eframe::App for App {
 
                 ui.separator();
                 theme::toggle_button(ui);
+                zoom::toggle_button(ui);
 
                 ui.with_layout(
                     egui::Layout::right_to_left(egui::Align::Center),
@@ -569,6 +571,7 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_visuals(theme::load().visuals());
+            cc.egui_ctx.set_zoom_factor(zoom::load());
             Ok(Box::<App>::default())
         }),
     )
