@@ -1,3 +1,4 @@
+mod issue;
 mod theme;
 mod zoom;
 
@@ -143,7 +144,10 @@ fn destination_for(entry: &Entry, instrument: Instrument) -> Option<PathBuf> {
     }
 }
 
-fn provision_and_launch(dest: &Path) -> Result<(), String> {
+fn provision_and_launch(
+    dest: &Path,
+    context: issue::LaunchContext,
+) -> Result<issue::LaunchWatch, String> {
     let src = Path::new(SOURCE_DIR);
     fs::create_dir_all(dest)
         .map_err(|e| format!("create {}: {e}", dest.display()))?;
@@ -174,11 +178,7 @@ fn provision_and_launch(dest: &Path) -> Result<(), String> {
     // Whether the destination pre-existed or was just provisioned, make sure
     // everything in it (notebooks included) is read/write/exec by everybody.
     open_permissions_recursive(dest);
-    Command::new(LAUNCH_SCRIPT)
-        .arg(dest)
-        .spawn()
-        .map_err(|e| format!("spawn {LAUNCH_SCRIPT}: {e}"))?;
-    Ok(())
+    issue::spawn_watched(LAUNCH_SCRIPT, dest, context)
 }
 
 /// Kick off the browser-cleanup script and return a channel that fires when
@@ -246,6 +246,32 @@ struct App {
     fix_browser_status: Option<(String, egui::Color32)>,
     /// Signals when the cleanup script exits, so the message can be cleared.
     fix_browser_rx: Option<mpsc::Receiver<()>>,
+    /// The running launch script / Jupyter server, if any.
+    launch_watch: Option<issue::LaunchWatch>,
+    /// Pop-up with the details of the last failed launch.
+    issue: Option<IssueWindow>,
+}
+
+/// State of the "launch failed" pop-up.
+struct IssueWindow {
+    headline: String,
+    report: String,
+    /// Outcome of the "Send issue to admin" click, once it arrives.
+    send_rx: Option<mpsc::Receiver<Result<(), String>>>,
+    send_status: Option<(String, egui::Color32)>,
+    sent: bool,
+}
+
+impl IssueWindow {
+    fn new(headline: String, report: String) -> Self {
+        Self {
+            headline,
+            report,
+            send_rx: None,
+            send_status: None,
+            sent: false,
+        }
+    }
 }
 
 impl Default for App {
@@ -265,6 +291,8 @@ impl Default for App {
             scroll_to_selected: false,
             fix_browser_status: None,
             fix_browser_rx: None,
+            launch_watch: None,
+            issue: None,
         }
     }
 }
@@ -291,6 +319,123 @@ impl App {
         self.loaded_for = Some(self.instrument);
     }
 
+    /// Notice when the launch script / Jupyter exits. An early non-zero exit
+    /// is a failed launch and opens the details window; anything else just
+    /// re-enables the launch button.
+    fn poll_launch(&mut self, ctx: &egui::Context) {
+        let Some(watch) = &self.launch_watch else { return };
+        let Some(exit) = watch.poll() else {
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+            return;
+        };
+        let watch = self.launch_watch.take().unwrap();
+        self.launching = false;
+        let early = watch.started.elapsed().as_secs() < issue::EARLY_FAILURE_SECS;
+        match exit {
+            issue::Exit::Code(0) => {
+                self.launch_status = Some(Ok("Jupyter session ended".to_string()));
+            }
+            issue::Exit::Code(_) if early => {
+                self.launch_status = Some(Err("Launch failed, see details".to_string()));
+                let headline = issue::headline(Some(exit));
+                let report =
+                    issue::build_report(&headline, Some(&watch.context), None, &watch.output());
+                self.issue = Some(IssueWindow::new(headline, report));
+            }
+            issue::Exit::Code(c) => {
+                self.launch_status = Some(Err(format!("Jupyter session ended (exit code {c})")));
+            }
+            issue::Exit::Signal(s) => {
+                self.launch_status = Some(Err(format!("Jupyter session was killed (signal {s})")));
+            }
+        }
+        ctx.request_repaint();
+    }
+
+    fn show_issue_window(&mut self, ctx: &egui::Context) {
+        let Some(win) = &mut self.issue else { return };
+        if let Some(rx) = &win.send_rx {
+            match rx.try_recv() {
+                Ok(Ok(())) => {
+                    win.send_rx = None;
+                    win.sent = true;
+                    win.send_status = Some((
+                        format!("Sent to {}", issue::ADMIN_EMAIL),
+                        egui::Color32::from_rgb(46, 160, 67),
+                    ));
+                }
+                Ok(Err(e)) => {
+                    win.send_rx = None;
+                    win.send_status = Some((format!("Could not send: {e}"), egui::Color32::RED));
+                }
+                Err(_) => ctx.request_repaint_after(std::time::Duration::from_millis(200)),
+            }
+        }
+
+        let mut open = true;
+        let mut close_clicked = false;
+        egui::Window::new(egui::RichText::new(&win.headline).strong())
+            .id(egui::Id::new("launch_issue_window"))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_size([440.0, 460.0])
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label(
+                    "The notebooks could not be started. Here is what happened. \
+                     Click \"Send issue to admin\" to e-mail this report, with your \
+                     user name and the machine you are on, so it can be fixed.",
+                );
+                ui.add_space(6.0);
+                egui::ScrollArea::both()
+                    .max_height(300.0)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(&win.report).monospace().size(11.0))
+                                .selectable(true),
+                        );
+                    });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    let sending = win.send_rx.is_some();
+                    let label = if win.sent {
+                        "\u{2709} Sent to admin".to_string()
+                    } else if sending {
+                        "Sending\u{2026}".to_string()
+                    } else {
+                        format!("\u{2709} Send issue to admin ({})", issue::ADMIN_EMAIL)
+                    };
+                    let button = egui::Button::new(egui::RichText::new(label).color(egui::Color32::WHITE))
+                        .fill(egui::Color32::from_rgb(30, 110, 200))
+                        .rounding(egui::Rounding::same(6.0))
+                        .min_size(egui::vec2(0.0, 28.0));
+                    if ui
+                        .add_enabled(!sending && !win.sent, button)
+                        .on_hover_text("E-mail this report to the admin")
+                        .clicked()
+                    {
+                        win.send_status = None;
+                        win.send_rx = Some(issue::send_to_admin(&win.headline, &win.report));
+                        ctx.request_repaint();
+                    }
+                    if ui
+                        .add(egui::Button::new("Close").min_size(egui::vec2(0.0, 28.0)))
+                        .clicked()
+                    {
+                        close_clicked = true;
+                    }
+                });
+                if let Some((msg, color)) = &win.send_status {
+                    ui.colored_label(*color, msg);
+                }
+            });
+        if !open || close_clicked {
+            self.issue = None;
+        }
+    }
+
     fn ipts_count(&self) -> usize {
         self.entries
             .iter()
@@ -302,16 +447,34 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if let Some(dest) = self.pending_launch.take() {
-            match provision_and_launch(&dest) {
-                Ok(()) => {
+            let context = issue::LaunchContext {
+                instrument: self.instrument.label().to_string(),
+                entry: self
+                    .selected
+                    .and_then(|i| self.entries.get(i))
+                    .map(|e| format!("{} ({})", e.label, e.path.display()))
+                    .unwrap_or_else(|| "(none)".to_string()),
+                destination: dest.display().to_string(),
+                command: format!("{LAUNCH_SCRIPT} {}", dest.display()),
+            };
+            match provision_and_launch(&dest, context.clone()) {
+                Ok(watch) => {
+                    self.launch_watch = Some(watch);
                     self.launch_status = Some(Ok(format!("Launched: {}", dest.display())));
                 }
                 Err(e) => {
                     self.launching = false;
-                    self.launch_status = Some(Err(e));
+                    self.launch_watch = None;
+                    self.launch_status = Some(Err("Launch failed, see details".to_string()));
+                    let headline = issue::headline(None);
+                    let report = issue::build_report(&headline, Some(&context), Some(&e), &[]);
+                    self.issue = Some(IssueWindow::new(headline, report));
                 }
             }
         }
+
+        self.poll_launch(ctx);
+        self.show_issue_window(ctx);
 
         if self.loaded_for != Some(self.instrument) {
             self.refresh();
